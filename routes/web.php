@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use App\Models\Food;
 use App\Models\User;
 use App\Models\Order;
@@ -27,36 +28,369 @@ Route::post('/api/chat', function (Request $request) {
     $history = $request->input('history', []);
     $message = strtolower(end($history)['content'] ?? '');
 
-    // Lấy danh sách món ăn từ DB
+    // Lấy toàn bộ menu đang hoạt động
     $foods = Food::where('is_active', 1)->latest()->get();
+
     $menuText = $foods->isEmpty()
         ? 'Hiện chưa có món ăn nào.'
         : $foods->map(fn($f) => "- {$f->name}: " . number_format($f->price) . "đ")->join("\n");
 
+    // ── Hàm helper: lọc món theo từ khoá trong tên ──────────────────────────
+    $filterMenu = function (array $keywords) use ($foods): string {
+        $filtered = $foods->filter(function ($f) use ($keywords) {
+            $lower = mb_strtolower($f->name);
+            foreach ($keywords as $kw) {
+                if (str_contains($lower, $kw)) return true;
+            }
+            return false;
+        });
+        return $filtered->isEmpty()
+            ? ''
+            : $filtered->map(fn($f) => "- {$f->name}: " . number_format($f->price) . "đ")->join("\n");
+    };
+
+    // Từ khoá phân loại
+    $kwFastFood = ['burger', 'gà', 'khoai', 'hot dog', 'nugget', 'sandwich', 'bánh mì', 'pizza', 'wrap'];
+    $kwHealthy  = ['salad', 'healthy', 'rau', 'ức gà', 'hoa quả', 'trái cây', 'ngũ cốc', 'smoothie bowl', 'yến mạch'];
+    $kwDrink    = ['nước', 'trà', 'cà phê', 'juice', 'sinh tố', 'soda', 'cola', 'latte', 'cappuccino', 'matcha', 'trà sữa', 'ép', 'đá'];
+    $kwDessert  = ['bánh', 'kem', 'chè', 'pudding', 'tiramisu', 'donut', 'waffle', 'pancake', 'cupcake'];
+    $kwRice     = ['cơm', 'cháo', 'xôi'];
+    $kwNoodle   = ['phở', 'bún', 'mì', 'hủ tiếu', 'ramen', 'udon', 'spaghetti', 'pasta'];
+    $kwVeg      = ['chay', 'thuần chay', 'vegan'];
+    $kwSpicy    = ['cay', 'lẩu', 'ớt'];
+    $kwSeafood  = ['tôm', 'cá', 'mực', 'hải sản', 'cua', 'bạch tuộc'];
+    $kwSnack    = ['snack', 'ăn vặt', 'khoai tây', 'onion ring', 'mozzarella stick'];
+
+    // ── Kịch bản gợi ý MỞ ĐẦU (người dùng hỏi gợi ý chung) ─────────────────
+    $wantSuggest = str_contains($message, 'gợi ý')
+        || str_contains($message, 'giới thiệu')
+        || str_contains($message, 'tư vấn')
+        || str_contains($message, 'recommend')
+        || str_contains($message, 'muốn ăn gì')
+        || str_contains($message, 'ăn gì ngon')
+        || str_contains($message, 'uống gì ngon')
+        || str_contains($message, 'chọn món')
+        || str_contains($message, 'không biết ăn gì')
+        || str_contains($message, 'không biết uống gì');
+
+    // ── Kịch bản hỏi cụ thể loại món ────────────────────────────────────────
+    $isFastFood = str_contains($message, 'đồ ăn nhanh')
+        || str_contains($message, 'fast food')
+        || str_contains($message, 'burger')
+        || str_contains($message, 'pizza')
+        || str_contains($message, 'gà rán');
+
+    $isHealthy  = str_contains($message, 'healthy')
+        || str_contains($message, 'tốt cho sức khoẻ')
+        || str_contains($message, 'tốt cho sức khỏe')
+        || str_contains($message, 'ít calo')
+        || str_contains($message, 'eat clean')
+        || str_contains($message, 'giảm cân')
+        || str_contains($message, 'rau');
+
+    $isDrink    = str_contains($message, 'đồ uống')
+        || str_contains($message, 'nước uống')
+        || str_contains($message, 'uống')
+        || str_contains($message, 'trà')
+        || str_contains($message, 'cà phê')
+        || str_contains($message, 'sinh tố')
+        || str_contains($message, 'juice')
+        || str_contains($message, 'soda');
+
+    $isDessert  = str_contains($message, 'tráng miệng')
+        || str_contains($message, 'dessert')
+        || str_contains($message, 'đồ ngọt')
+        || str_contains($message, 'bánh ngọt')
+        || str_contains($message, 'kem');
+
+    $isRice     = str_contains($message, 'cơm')
+        || str_contains($message, 'cháo')
+        || str_contains($message, 'xôi');
+
+    $isNoodle   = str_contains($message, 'phở')
+        || str_contains($message, 'bún')
+        || str_contains($message, 'mì')
+        || str_contains($message, 'pasta')
+        || str_contains($message, 'ramen');
+
+    $isVeg      = str_contains($message, 'chay')
+        || str_contains($message, 'vegan')
+        || str_contains($message, 'thuần chay');
+
+    $isSpicy    = str_contains($message, 'cay')
+        || str_contains($message, 'lẩu')
+        || str_contains($message, 'đồ cay');
+
+    $isSeafood  = str_contains($message, 'hải sản')
+        || str_contains($message, 'tôm')
+        || str_contains($message, 'cá')
+        || str_contains($message, 'mực');
+
+    $isSnack    = str_contains($message, 'ăn vặt')
+        || str_contains($message, 'snack')
+        || str_contains($message, 'khai vị');
+
+    $isCheap    = str_contains($message, 'rẻ')
+        || str_contains($message, 'tiết kiệm')
+        || str_contains($message, 'ít tiền')
+        || str_contains($message, 'bình dân')
+        || str_contains($message, 'dưới 50')
+        || str_contains($message, 'dưới 100');
+
+    $isExpensive = str_contains($message, 'cao cấp')
+        || str_contains($message, 'sang')
+        || str_contains($message, 'xịn')
+        || str_contains($message, 'ngon nhất')
+        || str_contains($message, 'đặc biệt');
+
+    $isCombo    = str_contains($message, 'combo')
+        || str_contains($message, 'set')
+        || str_contains($message, 'phần ăn');
+
+    $isHot      = str_contains($message, 'nóng')
+        || str_contains($message, 'ấm')
+        || str_contains($message, 'soup')
+        || str_contains($message, 'canh');
+
+    $isCold     = str_contains($message, 'lạnh')
+        || str_contains($message, 'mát')
+        || str_contains($message, 'đá')
+        || str_contains($message, 'giải nhiệt');
+
+    $isBreakfast = str_contains($message, 'sáng')
+        || str_contains($message, 'bữa sáng')
+        || str_contains($message, 'breakfast');
+
+    $isLunch    = str_contains($message, 'trưa')
+        || str_contains($message, 'bữa trưa')
+        || str_contains($message, 'lunch');
+
+    $isDinner   = str_contains($message, 'tối')
+        || str_contains($message, 'bữa tối')
+        || str_contains($message, 'dinner');
+
+    // ── PRE-COMPUTE các reply cho từng kịch bản (tránh IIFE trong match) ────
+
+    // 2. Đồ ăn nhanh
+    $listFastFood = $filterMenu($kwFastFood);
+    $replyFastFood = $listFastFood
+        ? "🍔 Các món đồ ăn nhanh hôm nay:\n{$listFastFood}\n\nBạn muốn thêm vào giỏ hàng món nào không?"
+        : "😔 Hôm nay chưa có đồ ăn nhanh trong menu. Bạn thử xem các món khác nhé!\n\nGõ **menu** để xem toàn bộ món.";
+
+    // 3. Healthy / Eat clean
+    $listHealthy = $filterMenu($kwHealthy);
+    $replyHealthy = $listHealthy
+        ? "🥗 Các món tốt cho sức khoẻ hôm nay:\n{$listHealthy}\n\nĂn healthy giúp bạn tràn đầy năng lượng cả ngày! 💪"
+        : "😔 Hôm nay chưa có món healthy trong menu. Bạn có thể thử các món ít dầu mỡ khác nhé!";
+
+    // 4. Đồ uống
+    $listDrink = $filterMenu($kwDrink);
+    $replyDrink = $listDrink
+        ? "🧋 Đồ uống có trong menu hôm nay:\n{$listDrink}\n\nBạn muốn uống nóng hay lạnh? Tôi có thể gợi ý thêm!"
+        : "😔 Hôm nay chưa có đồ uống trong menu. Bạn thử món ăn khác nhé!";
+
+    // 5. Tráng miệng / Đồ ngọt
+    $listDessert = $filterMenu($kwDessert);
+    $replyDessert = $listDessert
+        ? "🍰 Các món tráng miệng & đồ ngọt hôm nay:\n{$listDessert}\n\nNgọt ngào kết thúc bữa ăn hoàn hảo! 🍮"
+        : "😔 Hôm nay chưa có món tráng miệng. Bạn quay lại sau nhé!";
+
+    // 6. Cơm / Cháo / Xôi
+    $listRice = $filterMenu($kwRice);
+    $replyRice = $listRice
+        ? "🍚 Các món cơm / cháo / xôi hôm nay:\n{$listRice}\n\nNo bụng, chắc dạ! 😄"
+        : "😔 Hôm nay chưa có món cơm / cháo / xôi. Bạn thử phở hay bún không?";
+
+    // 7. Phở / Bún / Mì / Pasta
+    $listNoodle = $filterMenu($kwNoodle);
+    $replyNoodle = $listNoodle
+        ? "🍜 Các món phở / bún / mì hôm nay:\n{$listNoodle}\n\nĂn tô mì nóng hổi cho ấm bụng nào! 🔥"
+        : "😔 Hôm nay chưa có món phở / bún / mì. Bạn thử cơm hay món khác nhé!";
+
+    // 8. Món chay / Vegan
+    $listVeg = $filterMenu($kwVeg);
+    $replyVeg = $listVeg
+        ? "🌿 Các món chay / thuần chay hôm nay:\n{$listVeg}\n\nĂn chay thanh tịnh, nhẹ nhàng cho cơ thể! 🙏"
+        : "😔 Hôm nay chưa có món chay trong menu. Bạn thử các món healthy khác nhé!";
+
+    // 9. Đồ cay / Lẩu
+    $listSpicy = $filterMenu($kwSpicy);
+    $replySpicy = $listSpicy
+        ? "🌶️ Các món cay / lẩu hôm nay:\n{$listSpicy}\n\nCẩn thận không? Cay lắm đấy! 🔥😄"
+        : "😔 Hôm nay chưa có món cay / lẩu. Bạn thử món khác nhé!";
+
+    // 10. Hải sản
+    $listSeafood = $filterMenu($kwSeafood);
+    $replySeafood = $listSeafood
+        ? "🦐 Các món hải sản hôm nay:\n{$listSeafood}\n\nTươi ngon từ biển cả! 🌊"
+        : "😔 Hôm nay chưa có món hải sản. Bạn thử các món khác nhé!";
+
+    // 11. Ăn vặt / Khai vị / Snack
+    $listSnack = $filterMenu($kwSnack);
+    $replySnack = $listSnack
+        ? "🥪 Các món ăn vặt / khai vị hôm nay:\n{$listSnack}\n\nNhâm nhi cho vui miệng nào! 😋"
+        : "😔 Hôm nay chưa có món ăn vặt. Bạn thử xem menu đầy đủ nhé!";
+
+    // 12. Món rẻ / Tiết kiệm
+    $filteredCheap = $foods->where('price', '<=', 80000)->sortBy('price');
+    $replyCheap = $filteredCheap->isEmpty()
+        ? "😔 Hiện tại chưa có món dưới 80.000đ. Bạn xem menu đầy đủ nhé!"
+        : "💰 Các món tiết kiệm (dưới 80.000đ) hôm nay:\n"
+            . $filteredCheap->map(fn($f) => "- {$f->name}: " . number_format($f->price) . "đ")->join("\n")
+            . "\n\nVừa ngon vừa rẻ! 😄";
+
+    // 13. Món cao cấp / Đặc biệt
+    $filteredExpensive = $foods->sortByDesc('price')->take(5);
+    $replyExpensive = $filteredExpensive->isEmpty()
+        ? "😔 Chưa có món đặc biệt hôm nay."
+        : "✨ Các món cao cấp & đặc biệt của FoodShop:\n"
+            . $filteredExpensive->map(fn($f) => "- {$f->name}: " . number_format($f->price) . "đ")->join("\n")
+            . "\n\nXứng đáng để bạn thưởng thức! 🌟";
+
+    // 14. Combo / Set
+    $listCombo = $filterMenu(['combo', 'set']);
+    $replyCombo = $listCombo
+        ? "🎁 Các combo / set ăn hôm nay:\n{$listCombo}\n\nGiá trị, no bụng và tiết kiệm hơn! 🤩"
+        : "😔 Hôm nay chưa có combo trong menu. Bạn có thể tự ghép món yêu thích nhé!\n\nGõ **menu** để xem toàn bộ.";
+
+    // 15. Đồ nóng / Ấm
+    $listHot = $filterMenu(array_merge($kwNoodle, $kwRice, ['canh', 'soup', 'lẩu', 'nóng']));
+    $replyHot = $listHot
+        ? "🔥 Các món nóng hổi hôm nay:\n{$listHot}\n\nĂn nóng cho ấm người nhé! ☕"
+        : "😔 Hôm nay chưa có nhiều món nóng. Bạn xem menu đầy đủ nhé!";
+
+    // 16. Đồ lạnh / Mát / Giải nhiệt
+    $listCold = $filterMenu(array_merge($kwDrink, $kwDessert, ['đá', 'lạnh', 'mát']));
+    $replyCold = $listCold
+        ? "🧊 Các món mát lạnh & giải nhiệt hôm nay:\n{$listCold}\n\nGiải nhiệt ngày hè nào! ❄️"
+        : "😔 Hôm nay chưa có nhiều món lạnh. Bạn xem menu đầy đủ nhé!";
+
+    // 17. Bữa sáng
+    $listBreakfast = $filterMenu(['bánh mì', 'xôi', 'cháo', 'sữa', 'ngũ cốc', 'sandwich', 'pancake', 'waffle', 'trứng', 'yến mạch']);
+    $replyBreakfast = $listBreakfast
+        ? "🌅 Gợi ý bữa sáng hôm nay:\n{$listBreakfast}\n\nKhởi đầu ngày mới thật năng lượng! ☀️"
+        : "😔 Hôm nay chưa có nhiều món phù hợp bữa sáng. Bạn xem menu nhé!";
+
+    // 18. Bữa trưa
+    $listLunch = $filterMenu(array_merge($kwRice, $kwNoodle, ['cơm', 'phở', 'bún', 'mì', 'gà', 'thịt', 'cá']));
+    $replyLunch = $listLunch
+        ? "🌞 Gợi ý bữa trưa hôm nay:\n{$listLunch}\n\nNo bụng chiến đấu buổi chiều thôi! 💪"
+        : "😔 Hôm nay chưa có nhiều món phù hợp bữa trưa. Bạn xem menu nhé!";
+
+    // 19. Bữa tối
+    $listDinner = $filterMenu(array_merge($kwFastFood, $kwSeafood, $kwSpicy, ['pizza', 'lẩu', 'nướng', 'steak']));
+    $replyDinner = $listDinner
+        ? "🌙 Gợi ý bữa tối hôm nay:\n{$listDinner}\n\nBữa tối ngon miệng cùng gia đình & bạn bè! 🥂"
+        : "😔 Hôm nay chưa có nhiều món phù hợp bữa tối. Bạn xem menu nhé!";
+
+    // ── ROUTING CÁC KỊCH BẢN ─────────────────────────────────────────────────
     $reply = match(true) {
+
+        // 1. Gợi ý mở đầu chung — hỏi lại sở thích
+        $wantSuggest && !$isFastFood && !$isHealthy && !$isDrink && !$isDessert
+            && !$isRice && !$isNoodle && !$isVeg && !$isSpicy && !$isSeafood
+            && !$isSnack && !$isCheap && !$isExpensive && !$isCombo
+            && !$isHot && !$isCold && !$isBreakfast && !$isLunch && !$isDinner
+        => "😊 Tôi rất vui được gợi ý cho bạn! Bạn đang muốn:\n\n"
+            . "🍔 Đồ ăn nhanh (fast food)\n"
+            . "🥗 Đồ ăn healthy (eat clean)\n"
+            . "🍜 Cơm / Phở / Bún / Mì\n"
+            . "🦐 Hải sản\n"
+            . "🌿 Món chay\n"
+            . "🍰 Tráng miệng / Đồ ngọt\n"
+            . "🧋 Đồ uống\n"
+            . "🌶️ Đồ cay / Lẩu\n"
+            . "🥪 Ăn vặt / Khai vị\n\n"
+            . "Hoặc bạn cũng có thể cho tôi biết bạn đang ăn **bữa sáng / trưa / tối**, muốn món **nóng hay lạnh**, hay ngân sách **tiết kiệm hay cao cấp** nhé!",
+
+        // 2. Đồ ăn nhanh
+        $isFastFood    => $replyFastFood,
+
+        // 3. Healthy / Eat clean
+        $isHealthy     => $replyHealthy,
+
+        // 4. Đồ uống
+        $isDrink       => $replyDrink,
+
+        // 5. Tráng miệng / Đồ ngọt
+        $isDessert     => $replyDessert,
+
+        // 6. Cơm / Cháo / Xôi
+        $isRice        => $replyRice,
+
+        // 7. Phở / Bún / Mì / Pasta
+        $isNoodle      => $replyNoodle,
+
+        // 8. Món chay / Vegan
+        $isVeg         => $replyVeg,
+
+        // 9. Đồ cay / Lẩu
+        $isSpicy       => $replySpicy,
+
+        // 10. Hải sản
+        $isSeafood     => $replySeafood,
+
+        // 11. Ăn vặt / Khai vị / Snack
+        $isSnack       => $replySnack,
+
+        // 12. Món rẻ / Tiết kiệm
+        $isCheap       => $replyCheap,
+
+        // 13. Món cao cấp / Đặc biệt
+        $isExpensive   => $replyExpensive,
+
+        // 14. Combo / Set
+        $isCombo       => $replyCombo,
+
+        // 15. Đồ nóng / Ấm
+        $isHot         => $replyHot,
+
+        // 16. Đồ lạnh / Mát / Giải nhiệt
+        $isCold        => $replyCold,
+
+        // 17. Bữa sáng
+        $isBreakfast   => $replyBreakfast,
+
+        // 18. Bữa trưa
+        $isLunch       => $replyLunch,
+
+        // 19. Bữa tối
+        $isDinner      => $replyDinner,
+
+        // ── CÁC KỊCH BẢN CŨ GIỮ NGUYÊN ─────────────────────────────────────
+
+        // 20. Xem menu
         str_contains($message, 'menu') || str_contains($message, 'món') || str_contains($message, 'hôm nay')
-            => "🍔 Menu hôm nay:\n{$menuText}\n\nBạn muốn đặt món nào?",
+        => "🍔 Menu hôm nay:\n{$menuText}\n\nBạn muốn đặt món nào? Hoặc gõ **gợi ý** để tôi tư vấn nhé!",
 
+        // 21. Khuyến mãi
         str_contains($message, 'khuyến mãi') || str_contains($message, 'giảm giá') || str_contains($message, 'ưu đãi')
-            => "🎁 Khuyến mãi hôm nay:\n- Giảm 20% đơn hàng đầu tiên\n- Mua 2 tặng 1 với Burger\n- Miễn phí giao hàng đơn từ 100.000đ",
+        => "🎁 Khuyến mãi hôm nay:\n- Giảm 20% đơn hàng đầu tiên\n- Mua 2 tặng 1 với Burger\n- Miễn phí giao hàng đơn từ 100.000đ",
 
+        // 22. Đơn hàng / Giao hàng
         str_contains($message, 'đơn hàng') || str_contains($message, 'theo dõi') || str_contains($message, 'giao hàng')
-            => "🚀 Bạn có thể theo dõi đơn hàng tại mục **Đơn hàng** trên menu.\nThời gian giao hàng trung bình 25-30 phút.",
+        => "🚀 Bạn có thể theo dõi đơn hàng tại mục **Đơn hàng** trên menu.\nThời gian giao hàng trung bình 25-30 phút.",
 
+        // 23. Thanh toán
         str_contains($message, 'thanh toán') || str_contains($message, 'trả tiền')
-            => "💳 FoodShop hỗ trợ 2 hình thức:\n- Thanh toán khi nhận hàng (COD)\n- Chuyển khoản QR Code",
+        => "💳 FoodShop hỗ trợ 2 hình thức:\n- Thanh toán khi nhận hàng (COD)\n- Chuyển khoản QR Code",
 
+        // 24. Liên hệ / Hỗ trợ
         str_contains($message, 'liên hệ') || str_contains($message, 'hỗ trợ') || str_contains($message, 'hotline')
-            => "📞 Liên hệ hỗ trợ:\n- Hotline: 1800 1234 (miễn phí)\n- Email: support@foodshop.vn\n- Giờ làm việc: 8h - 22h",
+        => "📞 Liên hệ hỗ trợ:\n- Hotline: 1800 1234 (miễn phí)\n- Email: support@foodshop.vn\n- Giờ làm việc: 8h - 22h",
 
+        // 25. Giờ mở cửa
         str_contains($message, 'giờ') || str_contains($message, 'mở cửa')
-            => "🕐 FoodShop mở cửa từ **8:00 - 22:00** tất cả các ngày trong tuần.",
+        => "🕐 FoodShop mở cửa từ **8:00 - 22:00** tất cả các ngày trong tuần.",
 
-        str_contains($message, 'xin chào') || str_contains($message, 'hello') || str_contains($message, 'hi') || str_contains($message, 'chào')
-            => "👋 Xin chào! Tôi là FoodBot, trợ lý của FoodShop.\nTôi có thể giúp bạn:\n- Xem menu & đặt món\n- Theo dõi đơn hàng\n- Thông tin khuyến mãi\n- Hỗ trợ thanh toán",
+        // 26. Chào hỏi
+        str_contains($message, 'xin chào') || str_contains($message, 'hello')
+            || str_contains($message, 'hi') || str_contains($message, 'chào')
+        => "👋 Xin chào! Tôi là FoodBot, trợ lý của FoodShop.\nTôi có thể giúp bạn:\n- 🍔 Xem menu & đặt món\n- 😊 Gợi ý món theo sở thích\n- 🎁 Thông tin khuyến mãi\n- 🚀 Theo dõi đơn hàng\n- 💳 Hỗ trợ thanh toán\n\nBạn cần gì hôm nay?",
 
+        // 27. Mặc định
         default
-            => "Xin lỗi, tôi chưa hiểu câu hỏi của bạn 😅\nBạn có thể hỏi về:\n- 🍔 Menu món ăn\n- 🎁 Khuyến mãi\n- 🚀 Theo dõi đơn hàng\n- 💳 Thanh toán\n- 📞 Liên hệ hỗ trợ",
+        => "Xin lỗi, tôi chưa hiểu câu hỏi của bạn 😅\nBạn có thể hỏi về:\n- 🍔 Menu & Gợi ý món ăn\n- 🎁 Khuyến mãi\n- 🚀 Theo dõi đơn hàng\n- 💳 Thanh toán\n- 📞 Liên hệ hỗ trợ",
     };
 
     return response()->json(['reply' => $reply]);
@@ -173,6 +507,71 @@ Route::delete('/profile/delete', function () {
     $user->delete();
 
     return redirect('/')->with('success', 'Tài khoản đã được xóa!');
+});
+
+/*
+|--------------------------------------------------------------------------
+| 2.5.1. AVATAR — Upload & Xóa ảnh đại diện
+|--------------------------------------------------------------------------
+*/
+
+Route::post('/profile/avatar', function (Request $request) {
+    if (!session('user')) {
+        return response()->json(['success' => false, 'message' => 'Bạn cần đăng nhập!'], 401);
+    }
+
+    $request->validate(
+        ['avatar' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:2048'],
+        [
+            'avatar.required' => 'Vui lòng chọn ảnh.',
+            'avatar.image'    => 'File phải là ảnh.',
+            'avatar.mimes'    => 'Chỉ chấp nhận ảnh JPG, PNG, GIF hoặc WebP.',
+            'avatar.max'      => 'Ảnh không được vượt quá 2MB.',
+        ]
+    );
+
+    $user = User::find(session('user')['id']);
+
+    if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+        Storage::disk('public')->delete($user->avatar);
+    }
+
+    $path = $request->file('avatar')->store('avatars', 'public');
+    $user->update(['avatar' => $path]);
+
+    session()->put('user', [
+        'id'     => $user->id,
+        'name'   => $user->name,
+        'email'  => $user->email,
+        'avatar' => $path,
+    ]);
+
+    return response()->json([
+        'success'    => true,
+        'avatar_url' => asset('storage/' . $path),
+    ]);
+});
+
+Route::post('/profile/avatar/remove', function () {
+    if (!session('user')) {
+        return response()->json(['success' => false, 'message' => 'Bạn cần đăng nhập!'], 401);
+    }
+
+    $user = User::find(session('user')['id']);
+
+    if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+        Storage::disk('public')->delete($user->avatar);
+    }
+
+    $user->update(['avatar' => null]);
+
+    session()->put('user', [
+        'id'    => $user->id,
+        'name'  => $user->name,
+        'email' => $user->email,
+    ]);
+
+    return response()->json(['success' => true]);
 });
 
 /*
@@ -356,7 +755,6 @@ Route::get('/chat', function () {
     if (!session('user')) return redirect('/auth')->with('error', 'Bạn cần đăng nhập!');
     $userId   = session('user')['id'];
     $messages = Message::where('user_id', $userId)->orderBy('created_at')->get();
-    // Đánh dấu tin admin đã đọc bởi user
     Message::where('user_id', $userId)->where('sender', 'admin')->update(['is_read' => true]);
     return view('chat', compact('messages'));
 });
@@ -373,7 +771,6 @@ Route::post('/chat/send', function (Request $request) {
     return response()->json(['message' => $msg->load('user')]);
 });
 
-// Polling: lấy tin mới hơn id X
 Route::get('/chat/poll', function (Request $request) {
     if (!session('user')) return response()->json(['error' => 'Unauthorized'], 401);
     $userId  = session('user')['id'];
@@ -382,7 +779,6 @@ Route::get('/chat/poll', function (Request $request) {
                       ->where('id', '>', $lastId)
                       ->orderBy('created_at')
                       ->get();
-    // Đánh dấu tin admin đã đọc
     Message::where('user_id', $userId)
            ->where('sender', 'admin')
            ->where('is_read', false)
@@ -528,7 +924,6 @@ Route::prefix('admin')->group(function () {
     Route::get('/chat/{userId}', function ($userId) {
         $user     = User::findOrFail($userId);
         $messages = Message::where('user_id', $userId)->orderBy('created_at')->get();
-        // Đánh dấu tin user đã đọc bởi admin
         Message::where('user_id', $userId)->where('sender', 'user')->update(['is_read' => true]);
         $users = User::whereHas('messages')->withCount([
             'messages as unread_count' => fn($q) => $q->where('sender', 'user')->where('is_read', false)
@@ -547,7 +942,6 @@ Route::prefix('admin')->group(function () {
         return response()->json(['message' => $msg]);
     });
 
-    // Polling admin: lấy tin mới trong conversation
     Route::get('/chat/{userId}/poll', function (Request $request, $userId) {
         $lastId = $request->query('last_id', 0);
         $msgs   = Message::where('user_id', $userId)
@@ -556,7 +950,6 @@ Route::prefix('admin')->group(function () {
                          ->get();
         Message::where('user_id', $userId)->where('sender', 'user')->where('is_read', false)
                ->update(['is_read' => true]);
-        // Tổng unread mỗi user để update sidebar
         $unreadMap = Message::where('sender', 'user')->where('is_read', false)
                             ->selectRaw('user_id, count(*) as cnt')
                             ->groupBy('user_id')
@@ -580,4 +973,5 @@ Route::prefix('admin')->group(function () {
     Route::get('/foods/delete/{id}',           [FoodController::class, 'destroy']);
     Route::patch('/foods/toggle-status/{id}',  [FoodController::class, 'toggleStatus']);
     Route::patch('/foods/voucher/{id}',        [FoodController::class, 'updateVoucher']);
+
 });

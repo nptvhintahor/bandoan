@@ -32,6 +32,60 @@
 
         .card-hover { transition: box-shadow 0.2s, transform 0.2s; }
         .card-hover:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.08); transform: translateY(-1px); }
+
+        /* Avatar upload styles */
+        .avatar-wrapper {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+        }
+        .avatar-overlay {
+            position: absolute;
+            inset: 0;
+            border-radius: 9999px;
+            background: rgba(0,0,0,0.45);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            gap: 3px;
+        }
+        .avatar-wrapper:hover .avatar-overlay { opacity: 1; }
+        .avatar-wrapper:hover .avatar-img,
+        .avatar-wrapper:hover .avatar-initials { filter: brightness(0.75); }
+        .avatar-img { transition: filter 0.2s; }
+        .avatar-initials { transition: filter 0.2s; }
+
+        /* Modal crop */
+        #avatar-modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(0,0,0,0.55);
+            align-items: center;
+            justify-content: center;
+        }
+        #avatar-modal-backdrop.flex { display: flex; }
+
+        #crop-canvas {
+            border-radius: 9999px;
+            overflow: hidden;
+            border: 3px solid #ef4444;
+        }
+
+        /* Preview ring animation */
+        @keyframes spin-ring {
+            to { transform: rotate(360deg); }
+        }
+        .uploading-ring {
+            animation: spin-ring 1s linear infinite;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -67,11 +121,36 @@
     <!-- HEADER PROFILE -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6 flex flex-col md:flex-row items-center md:items-start gap-6">
 
-        <!-- Avatar -->
+        <!-- Avatar với tính năng upload -->
         <div class="relative flex-shrink-0">
-            <div class="w-24 h-24 rounded-full bg-red-100 flex items-center justify-center text-4xl font-bold text-red-500 border-4 border-white shadow-md">
-                {{ strtoupper(substr(session('user')['name'] ?? 'U', 0, 1)) }}
+            <div class="avatar-wrapper w-24 h-24" onclick="openAvatarModal()" title="Nhấn để đổi ảnh đại diện">
+
+                @if(!empty($user->avatar))
+                    {{-- Đã có ảnh: hiển thị ảnh thật --}}
+                    <img id="avatar-display"
+                         src="{{ asset('storage/' . $user->avatar) }}"
+                         alt="Avatar"
+                         class="avatar-img w-24 h-24 rounded-full object-cover border-4 border-white shadow-md">
+                @else
+                    {{-- Chưa có ảnh: hiển thị initials --}}
+                    <div id="avatar-display"
+                         class="avatar-initials w-24 h-24 rounded-full bg-red-100 flex items-center justify-center text-4xl font-bold text-red-500 border-4 border-white shadow-md">
+                        {{ strtoupper(substr(session('user')['name'] ?? 'U', 0, 1)) }}
+                    </div>
+                @endif
+
+                <!-- Overlay hover -->
+                <div class="avatar-overlay">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    <span>Đổi ảnh</span>
+                </div>
             </div>
+
+            <!-- Badge online -->
             <span class="absolute bottom-0 right-0 bg-green-400 border-2 border-white rounded-full w-5 h-5"></span>
         </div>
 
@@ -379,7 +458,6 @@
                 </button>
             </div>
 
-            {{-- Thông báo thành công cho địa chỉ --}}
             @if(session('address_success'))
             <div class="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3 mb-4 text-sm">
                 ✅ {{ session('address_success') }}
@@ -397,7 +475,6 @@
                 <p class="text-sm text-gray-500 mt-0.5">📞 {{ $address->phone }}</p>
                 <p class="text-sm text-gray-600 mt-1">📍 {{ $address->address }}</p>
                 <div class="flex gap-2 mt-3">
-                    {{-- Nút Sửa → mở modal edit --}}
                     <button
                         onclick="openEditAddressModal({{ $address->id }}, '{{ addslashes($address->receiver_name) }}', '{{ addslashes($address->phone) }}', '{{ addslashes($address->address) }}', {{ $address->is_default ? 'true' : 'false' }})"
                         class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition font-medium">
@@ -478,7 +555,6 @@
 
             <hr class="my-6 border-gray-100">
 
-            <!-- Phiên đăng nhập -->
             <h3 class="font-semibold text-gray-700 mb-3">Hoạt động tài khoản</h3>
             <div class="flex items-center justify-between bg-gray-50 rounded-xl p-4">
                 <div>
@@ -490,7 +566,6 @@
 
             <hr class="my-6 border-gray-100">
 
-            <!-- Xóa tài khoản -->
             <h3 class="font-semibold text-red-600 mb-2">Vùng nguy hiểm</h3>
             <p class="text-sm text-gray-500 mb-3">Xóa tài khoản sẽ không thể khôi phục dữ liệu.</p>
             <button onclick="confirm('Bạn chắc chắn muốn xóa tài khoản?') && document.getElementById('delete-form').submit()"
@@ -504,6 +579,91 @@
     </div>
 
 </div>
+</div>
+
+<!-- ============ MODAL: ĐỔI ẢNH ĐẠI DIỆN ============ -->
+<div id="avatar-modal-backdrop" onclick="handleBackdropClick(event)">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onclick="event.stopPropagation()">
+
+        <div class="flex justify-between items-center mb-5">
+            <h3 class="text-lg font-bold text-gray-800">Đổi ảnh đại diện</h3>
+            <button onclick="closeAvatarModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+
+        <!-- Preview vùng tròn -->
+        <div class="flex flex-col items-center gap-4">
+
+            <!-- Vòng preview -->
+            <div class="relative">
+                <div id="avatar-preview-ring"
+                     class="w-36 h-36 rounded-full border-4 border-red-200 overflow-hidden bg-red-50 flex items-center justify-center shadow-md">
+                    @if(!empty($user->avatar))
+                        <img id="avatar-preview-img"
+                             src="{{ asset('storage/' . $user->avatar) }}"
+                             alt="Preview"
+                             class="w-full h-full object-cover">
+                    @else
+                        <span id="avatar-preview-initials"
+                              class="text-5xl font-bold text-red-400">
+                            {{ strtoupper(substr(session('user')['name'] ?? 'U', 0, 1)) }}
+                        </span>
+                    @endif
+                </div>
+                <!-- Spinner khi đang upload -->
+                <div id="avatar-spinner" class="hidden absolute inset-0 rounded-full bg-black bg-opacity-30 flex items-center justify-center">
+                    <svg class="uploading-ring w-8 h-8 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Thông tin hướng dẫn -->
+            <p class="text-xs text-gray-400 text-center">Ảnh JPG, PNG hoặc GIF. Tối đa 2MB.</p>
+
+            <!-- Input file (ẩn) -->
+            <input type="file" id="avatar-file-input" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
+
+            <!-- Nút chọn ảnh -->
+            <button onclick="document.getElementById('avatar-file-input').click()"
+                class="w-full border-2 border-dashed border-red-300 rounded-xl py-3 text-sm text-red-500 font-medium hover:bg-red-50 transition flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                Chọn ảnh từ thiết bị
+            </button>
+
+            <!-- Thông báo lỗi -->
+            <p id="avatar-error" class="hidden text-xs text-red-500 text-center"></p>
+
+            <!-- Form upload (ẩn, submit bằng JS) -->
+            <form id="avatar-upload-form" action="/profile/avatar" method="POST" enctype="multipart/form-data" class="hidden">
+                @csrf
+                <input type="file" name="avatar" id="avatar-form-file">
+            </form>
+
+            <!-- Nút hành động -->
+            <div id="avatar-actions" class="hidden w-full flex gap-3">
+                <button onclick="submitAvatarUpload()"
+                    class="flex-1 bg-red-500 text-white py-2.5 rounded-lg hover:bg-red-600 transition text-sm font-medium">
+                    💾 Lưu ảnh
+                </button>
+                <button onclick="cancelAvatarSelect()"
+                    class="flex-1 border border-gray-200 py-2.5 rounded-lg hover:bg-gray-50 transition text-sm">
+                    Hủy
+                </button>
+            </div>
+
+            @if(!empty($user->avatar))
+            <button onclick="removeAvatar()"
+                class="text-xs text-gray-400 hover:text-red-400 transition underline underline-offset-2">
+                Xóa ảnh đại diện
+            </button>
+            @endif
+
+        </div>
+    </div>
 </div>
 
 <!-- ============ MODAL: CHỈNH SỬA THÔNG TIN ============ -->
@@ -679,7 +839,6 @@ function switchTab(name, btn) {
     btn.classList.add('active');
 }
 
-// ── Kích hoạt đúng tab khi load trang (từ ?tab=address) ──────
 (function () {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab');
@@ -689,7 +848,6 @@ function switchTab(name, btn) {
         if (btn) switchTab(tab, btn);
         else document.querySelector('.tab-btn').click();
     } else {
-        // Mặc định mở tab info
         document.querySelector('.tab-btn').classList.add('active');
         document.getElementById('tab-info').classList.add('active');
     }
@@ -723,16 +881,11 @@ document.getElementById('address-modal').addEventListener('click', function(e) {
 
 // ── Modal sửa địa chỉ ────────────────────────────────────────
 function openEditAddressModal(id, receiverName, phone, address, isDefault) {
-    // Điền dữ liệu vào form
     document.getElementById('edit_receiver_name').value = receiverName;
     document.getElementById('edit_phone').value         = phone;
     document.getElementById('edit_address').value       = address;
     document.getElementById('edit_is_default').checked  = isDefault;
-
-    // Cập nhật action của form
     document.getElementById('edit-address-form').action = '/address/' + id + '/update';
-
-    // Mở modal
     document.getElementById('edit-address-modal').classList.remove('hidden');
     document.getElementById('edit-address-modal').classList.add('flex');
 }
@@ -747,12 +900,216 @@ document.getElementById('edit-address-modal').addEventListener('click', function
 // ── Lọc đơn hàng ─────────────────────────────────────────────
 function filterOrders(status) {
     document.querySelectorAll('.order-item').forEach(el => {
-        if (status === 'all') {
-            el.style.display = '';
-        } else {
-            // So sánh trực tiếp với data-status (tiếng Việt)
-            el.style.display = (el.dataset.status === status) ? '' : 'none';
+        el.style.display = (status === 'all' || el.dataset.status === status) ? '' : 'none';
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ── AVATAR UPLOAD ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+let selectedFile = null;  // lưu file người dùng chọn
+
+function openAvatarModal() {
+    const backdrop = document.getElementById('avatar-modal-backdrop');
+    backdrop.classList.add('flex');
+}
+
+function closeAvatarModal() {
+    const backdrop = document.getElementById('avatar-modal-backdrop');
+    backdrop.classList.remove('flex');
+    // Reset trạng thái nếu chưa lưu
+    cancelAvatarSelect();
+}
+
+function handleBackdropClick(e) {
+    if (e.target === document.getElementById('avatar-modal-backdrop')) {
+        closeAvatarModal();
+    }
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    const errorEl = document.getElementById('avatar-error');
+    errorEl.classList.add('hidden');
+
+    if (!file) return;
+
+    // Validate loại file
+    if (!file.type.startsWith('image/')) {
+        showAvatarError('Vui lòng chọn file ảnh (JPG, PNG, GIF).');
+        return;
+    }
+
+    // Validate dung lượng (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        showAvatarError('Ảnh quá lớn. Vui lòng chọn ảnh nhỏ hơn 2MB.');
+        return;
+    }
+
+    selectedFile = file;
+
+    // Hiển thị preview
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const previewRing = document.getElementById('avatar-preview-ring');
+
+        // Xóa nội dung cũ (initials hoặc img cũ)
+        previewRing.innerHTML = '';
+
+        // Thêm img preview mới
+        const img = document.createElement('img');
+        img.src = e.target.result;
+        img.id  = 'avatar-preview-img';
+        img.className = 'w-full h-full object-cover';
+        previewRing.appendChild(img);
+
+        // Hiện nút hành động
+        document.getElementById('avatar-actions').classList.remove('hidden');
+        document.getElementById('avatar-actions').classList.add('flex');
+    };
+    reader.readAsDataURL(file);
+}
+
+function showAvatarError(msg) {
+    const errorEl = document.getElementById('avatar-error');
+    errorEl.textContent = msg;
+    errorEl.classList.remove('hidden');
+}
+
+function cancelAvatarSelect() {
+    selectedFile = null;
+    document.getElementById('avatar-file-input').value = '';
+    document.getElementById('avatar-actions').classList.add('hidden');
+    document.getElementById('avatar-actions').classList.remove('flex');
+    document.getElementById('avatar-error').classList.add('hidden');
+
+    // Khôi phục preview về ảnh hiện tại (hoặc initials)
+    const previewRing = document.getElementById('avatar-preview-ring');
+    const currentSrc  = document.getElementById('avatar-display')?.src;
+
+    previewRing.innerHTML = '';
+
+    if (currentSrc && !currentSrc.endsWith('/')) {
+        // Đang có ảnh thật → restore img
+        const img = document.createElement('img');
+        img.src       = currentSrc;
+        img.id        = 'avatar-preview-img';
+        img.className = 'w-full h-full object-cover';
+        previewRing.appendChild(img);
+    } else {
+        // Chưa có ảnh → restore initials
+        const span = document.createElement('span');
+        span.id        = 'avatar-preview-initials';
+        span.className = 'text-5xl font-bold text-red-400';
+        span.textContent = document.querySelector('.avatar-initials')?.textContent?.trim()
+                         || document.querySelector('h1')?.textContent?.trim()?.[0]?.toUpperCase()
+                         || 'U';
+        previewRing.appendChild(span);
+    }
+}
+
+function submitAvatarUpload() {
+    if (!selectedFile) return;
+
+    const spinner  = document.getElementById('avatar-spinner');
+    const errorEl  = document.getElementById('avatar-error');
+    const actionsEl = document.getElementById('avatar-actions');
+    errorEl.classList.add('hidden');
+
+    // Hiện spinner
+    spinner.classList.remove('hidden');
+    spinner.classList.add('flex');
+    actionsEl.querySelectorAll('button').forEach(b => b.disabled = true);
+
+    // Tạo FormData
+    const formData = new FormData();
+    formData.append('avatar', selectedFile);
+    formData.append('_token', document.querySelector('meta[name="csrf-token"]')?.content
+                              || '{{ csrf_token() }}');
+
+    fetch('/profile/avatar', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
         }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            // Cập nhật avatar trên trang (header + navbar nếu có)
+            const newSrc = data.avatar_url + '?t=' + Date.now();
+
+            // Thay avatar ở header profile
+            const displayEl = document.getElementById('avatar-display');
+            if (displayEl) {
+                if (displayEl.tagName === 'IMG') {
+                    displayEl.src = newSrc;
+                } else {
+                    // Đang là div initials → thay bằng img
+                    const img = document.createElement('img');
+                    img.id        = 'avatar-display';
+                    img.src       = newSrc;
+                    img.alt       = 'Avatar';
+                    img.className = 'avatar-img w-24 h-24 rounded-full object-cover border-4 border-white shadow-md';
+                    displayEl.replaceWith(img);
+                }
+            }
+
+            closeAvatarModal();
+        } else {
+            showAvatarError(data.message || 'Có lỗi xảy ra, vui lòng thử lại.');
+        }
+    })
+    .catch(() => {
+        showAvatarError('Không thể kết nối máy chủ. Vui lòng thử lại.');
+    })
+    .finally(() => {
+        spinner.classList.add('hidden');
+        spinner.classList.remove('flex');
+        actionsEl.querySelectorAll('button').forEach(b => b.disabled = false);
+        selectedFile = null;
+        document.getElementById('avatar-file-input').value = '';
+        document.getElementById('avatar-actions').classList.add('hidden');
+        document.getElementById('avatar-actions').classList.remove('flex');
+    });
+}
+
+function removeAvatar() {
+    if (!confirm('Bạn chắc chắn muốn xóa ảnh đại diện?')) return;
+
+    fetch('/profile/avatar/remove', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            // Lấy initial từ tên
+            const initial = '{{ strtoupper(substr(session("user")["name"] ?? "U", 0, 1)) }}';
+
+            // Thay avatar display về initials
+            const displayEl = document.getElementById('avatar-display');
+            if (displayEl) {
+                const div = document.createElement('div');
+                div.id        = 'avatar-display';
+                div.className = 'avatar-initials w-24 h-24 rounded-full bg-red-100 flex items-center justify-center text-4xl font-bold text-red-500 border-4 border-white shadow-md';
+                div.textContent = initial;
+                displayEl.replaceWith(div);
+            }
+
+            closeAvatarModal();
+        }
+    })
+    .catch(() => {
+        showAvatarError('Không thể xóa ảnh. Vui lòng thử lại.');
     });
 }
 </script>

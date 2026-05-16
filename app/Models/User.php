@@ -17,6 +17,7 @@ class User extends Authenticatable
         'phone',
         'birthday',
         'gender',
+        'avatar',   // ← thêm dòng này
     ];
 
     protected $hidden = [

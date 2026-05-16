@@ -11,7 +11,7 @@
     .chat-shell {
         display: grid;
         grid-template-columns: 300px 1fr;
-        height: calc(100vh - 64px - 48px); /* trừ sidebar header & padding */
+        height: calc(100vh - 64px - 48px);
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: 20px;
@@ -72,18 +72,38 @@
     .user-item:hover { background: rgba(232,80,26,0.04); }
     .user-item.active { background: var(--brand-lt); border-right: 3px solid var(--brand); }
 
-    .user-av {
-        width: 40px; height: 40px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, var(--ink), #6B4C34);
-        color: white;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 15px;
-        font-weight: 700;
-        flex-shrink: 0;
+    /* ── AVATAR chung ── */
+    .av-wrap {
         position: relative;
+        flex-shrink: 0;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        color: white;
     }
-    .user-av.active-user { background: linear-gradient(135deg, var(--brand), var(--brand-dk)); }
+    .av-wrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .av-initials {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .av-40  { width: 40px;  height: 40px;  border-radius: 12px; font-size: 15px; }
+    .av-38  { width: 38px;  height: 38px;  border-radius: 11px; font-size: 15px; }
+    .av-28  { width: 28px;  height: 28px;  border-radius: 8px;  font-size: 12px; }
+
+    .av-default { background: linear-gradient(135deg, var(--ink), #6B4C34); }
+    .av-active  { background: linear-gradient(135deg, var(--brand), var(--brand-dk)); }
+    .av-admin-c { background: linear-gradient(135deg, var(--brand), var(--brand-dk)); }
 
     .user-info { flex: 1; min-width: 0; }
     .user-name {
@@ -145,15 +165,6 @@
         flex-shrink: 0;
     }
     .chat-topbar-left { display: flex; align-items: center; gap: 12px; }
-    .chat-user-av {
-        width: 38px; height: 38px;
-        border-radius: 11px;
-        background: linear-gradient(135deg, var(--ink), #6B4C34);
-        color: white;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 15px;
-        font-weight: 700;
-    }
     .chat-user-name { font-size: 14.5px; font-weight: 700; color: var(--ink); }
     .chat-user-sub  { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 
@@ -204,16 +215,6 @@
         to   { opacity: 1; transform: translateY(0); }
     }
     .msg-row.admin-msg { flex-direction: row-reverse; }
-
-    .msg-av {
-        width: 28px; height: 28px;
-        border-radius: 8px;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 12px; font-weight: 700;
-        flex-shrink: 0; margin-bottom: 2px;
-    }
-    .msg-av.av-user  { background: linear-gradient(135deg, var(--ink), #6B4C34); color: white; }
-    .msg-av.av-admin { background: linear-gradient(135deg, var(--brand), var(--brand-dk)); color: white; }
 
     .bubble-wrap { max-width: 68%; display: flex; flex-direction: column; gap: 2px; }
     .msg-row.admin-msg .bubble-wrap { align-items: flex-end; }
@@ -385,13 +386,27 @@
 
         <div class="user-list" id="userList">
             @forelse($users as $u)
+            @php
+                $isActive = isset($user) && $user->id === $u->id;
+                $avColor  = $isActive ? 'av-active' : 'av-default';
+                $uInit    = strtoupper(substr($u->name ?? 'U', 0, 1));
+            @endphp
             <a href="/admin/chat/{{ $u->id }}"
-               class="user-item {{ isset($user) && $user->id === $u->id ? 'active' : '' }}"
+               class="user-item {{ $isActive ? 'active' : '' }}"
                data-name="{{ strtolower($u->name) }}"
                data-uid="{{ $u->id }}">
-                <div class="user-av {{ isset($user) && $user->id === $u->id ? 'active-user' : '' }}">
-                    {{ strtoupper(substr($u->name, 0, 1)) }}
+
+                {{-- Avatar sidebar --}}
+                <div class="av-wrap av-40 {{ $avColor }}">
+                    @if(!empty($u->avatar))
+                        <img src="{{ asset('storage/' . $u->avatar) }}" alt="{{ $uInit }}"
+                             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <div class="av-initials" style="display:none">{{ $uInit }}</div>
+                    @else
+                        <div class="av-initials">{{ $uInit }}</div>
+                    @endif
                 </div>
+
                 <div class="user-info">
                     <div class="user-name">{{ $u->name }}</div>
                     <div class="user-preview">{{ $u->email }}</div>
@@ -415,10 +430,23 @@
     <div class="chat-main">
 
         @isset($user)
+        @php $userInit = strtoupper(substr($user->name ?? 'U', 0, 1)); @endphp
+
         <!-- Topbar -->
         <div class="chat-topbar">
             <div class="chat-topbar-left">
-                <div class="chat-user-av">{{ strtoupper(substr($user->name, 0, 1)) }}</div>
+
+                {{-- Avatar topbar --}}
+                <div class="av-wrap av-38 av-active">
+                    @if(!empty($user->avatar))
+                        <img src="{{ asset('storage/' . $user->avatar) }}" alt="{{ $userInit }}"
+                             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <div class="av-initials" style="display:none">{{ $userInit }}</div>
+                    @else
+                        <div class="av-initials">{{ $userInit }}</div>
+                    @endif
+                </div>
+
                 <div>
                     <div class="chat-user-name">{{ $user->name }}</div>
                     <div class="chat-user-sub">{{ $user->email }}</div>
@@ -435,18 +463,33 @@
         <div class="msg-area" id="msgArea">
             @forelse($messages as $msg)
             <div class="msg-row {{ $msg->sender === 'admin' ? 'admin-msg' : '' }}">
+
                 @if($msg->sender === 'user')
-                <div class="msg-av av-user">{{ strtoupper(substr($user->name, 0, 1)) }}</div>
+                {{-- Avatar bubble user --}}
+                <div class="av-wrap av-28 av-default">
+                    @if(!empty($user->avatar))
+                        <img src="{{ asset('storage/' . $user->avatar) }}" alt="{{ $userInit }}"
+                             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <div class="av-initials" style="display:none">{{ $userInit }}</div>
+                    @else
+                        <div class="av-initials">{{ $userInit }}</div>
+                    @endif
+                </div>
                 @endif
+
                 <div class="bubble-wrap">
                     <div class="bubble {{ $msg->sender === 'admin' ? 'from-admin' : 'from-user' }}">
                         {{ $msg->content }}
                     </div>
                     <div class="bubble-time">{{ $msg->created_at->format('H:i') }}</div>
                 </div>
+
                 @if($msg->sender === 'admin')
-                <div class="msg-av av-admin">AD</div>
+                <div class="av-wrap av-28 av-admin-c">
+                    <div class="av-initials">AD</div>
+                </div>
                 @endif
+
             </div>
             @empty
             <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:13px">
@@ -454,9 +497,18 @@
             </div>
             @endforelse
 
-            <!-- Typing -->
+            <!-- Typing indicator -->
             <div class="typing-row" id="typingRow">
-                <div class="msg-av av-user">{{ strtoupper(substr($user->name, 0, 1)) }}</div>
+                {{-- Avatar typing --}}
+                <div class="av-wrap av-28 av-default">
+                    @if(!empty($user->avatar))
+                        <img src="{{ asset('storage/' . $user->avatar) }}" alt="{{ $userInit }}"
+                             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <div class="av-initials" style="display:none">{{ $userInit }}</div>
+                    @else
+                        <div class="av-initials">{{ $userInit }}</div>
+                    @endif
+                </div>
                 <div class="typing-dots">
                     <div class="tdot"></div><div class="tdot"></div><div class="tdot"></div>
                 </div>
@@ -499,10 +551,11 @@
 @section('scripts')
 @isset($user)
 <script>
-const CSRF   = document.querySelector('meta[name="csrf-token"]').content;
-const UID    = {{ $user->id }};
-const UINIT  = '{{ strtoupper(substr($user->name, 0, 1)) }}';
-let lastId   = {{ isset($messages) && $messages->isNotEmpty() ? $messages->last()->id : 0 }};
+const CSRF    = document.querySelector('meta[name="csrf-token"]').content;
+const UID     = {{ $user->id }};
+const UAVATAR = @json(!empty($user->avatar) ? asset('storage/' . $user->avatar) : null);
+const UINIT   = '{{ strtoupper(substr($user->name, 0, 1)) }}';
+let lastId    = {{ isset($messages) && $messages->isNotEmpty() ? $messages->last()->id : 0 }};
 
 function scrollBottom(smooth = true) {
     const area = document.getElementById('msgArea');
@@ -519,17 +572,35 @@ function formatTime(str) {
     return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
 }
 
+/**
+ * Tạo HTML avatar phía JS — khớp với markup Blade inline ở trên.
+ */
+function makeAvHtml(size, color) {
+    if (UAVATAR) {
+        return `<div class="av-wrap ${size} ${color}">
+                    <img src="${UAVATAR}" alt="${UINIT}"
+                         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <div class="av-initials" style="display:none">${UINIT}</div>
+                </div>`;
+    }
+    return `<div class="av-wrap ${size} ${color}"><div class="av-initials">${UINIT}</div></div>`;
+}
+
 function appendMsg(content, sender, time) {
-    const indicator = document.getElementById('typingRow');
-    const row = document.createElement('div');
-    row.className = 'msg-row' + (sender === 'admin' ? ' admin-msg' : '');
+    const indicator   = document.getElementById('typingRow');
+    const row         = document.createElement('div');
+    row.className     = 'msg-row' + (sender === 'admin' ? ' admin-msg' : '');
+
+    const userAvHtml  = makeAvHtml('av-28', 'av-default');
+    const adminAvHtml = `<div class="av-wrap av-28 av-admin-c"><div class="av-initials">AD</div></div>`;
+
     row.innerHTML = `
-        ${sender === 'user' ? `<div class="msg-av av-user">${UINIT}</div>` : ''}
+        ${sender === 'user' ? userAvHtml : ''}
         <div class="bubble-wrap">
             <div class="bubble ${sender === 'admin' ? 'from-admin' : 'from-user'}">${escapeHtml(content)}</div>
             <div class="bubble-time">${time}</div>
         </div>
-        ${sender === 'admin' ? '<div class="msg-av av-admin">AD</div>' : ''}
+        ${sender === 'admin' ? adminAvHtml : ''}
     `;
     document.getElementById('msgArea').insertBefore(row, indicator);
     scrollBottom();
@@ -541,14 +612,14 @@ async function adminSend() {
     if (!content) return;
 
     const btn = document.getElementById('adminSendBtn');
-    btn.disabled = true;
-    input.value = '';
+    btn.disabled  = true;
+    input.value   = '';
     input.style.height = 'auto';
 
-    appendMsg(content, 'admin', new Date().toLocaleTimeString('vi',{hour:'2-digit',minute:'2-digit'}));
+    appendMsg(content, 'admin', new Date().toLocaleTimeString('vi', { hour: '2-digit', minute: '2-digit' }));
 
     try {
-        const res = await fetch(`/admin/chat/${UID}/send`, {
+        const res  = await fetch(`/admin/chat/${UID}/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF },
             body: JSON.stringify({ content })
@@ -562,14 +633,14 @@ async function adminSend() {
 }
 
 function insertCanned(text) {
-    const inp = document.getElementById('adminInput');
-    inp.value = text;
+    const inp     = document.getElementById('adminInput');
+    inp.value     = text;
     inp.focus();
     inp.style.height = 'auto';
     inp.style.height = Math.min(inp.scrollHeight, 100) + 'px';
 }
 
-// Auto-resize
+// Auto-resize textarea
 document.getElementById('adminInput').addEventListener('input', function() {
     this.style.height = 'auto';
     this.style.height = Math.min(this.scrollHeight, 100) + 'px';
@@ -596,9 +667,9 @@ async function poll() {
         // Cập nhật badge sidebar
         if (data.unread_map) {
             document.querySelectorAll('[id^="badge-"]').forEach(el => {
-                const uid   = el.id.replace('badge-','');
+                const uid   = el.id.replace('badge-', '');
                 const count = data.unread_map[uid] || 0;
-                el.textContent = count;
+                el.textContent   = count;
                 el.style.display = count > 0 ? 'flex' : 'none';
             });
         }
